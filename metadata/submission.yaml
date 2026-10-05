@@ -1,11 +1,11 @@
-# Build Secure 24 — Submission Metadata
+﻿# Build Secure 24 — Submission Metadata
 # Official Deadline: October 6, 2026, 11:00 AM IST (2026-10-06T11:00:00+05:30)
 
 version: "1.0"
 
 submission:
-  team_id: ""
-  repository: ""
+  team_id: "40"
+  repository: "https://github.com/Naveen-25072007/fintrack.git"
   commit_sha: ""
   deployment_url: ""
   submitted_at: ""
