@@ -1,326 +1,501 @@
+import { useEffect, useState } from "react";
+import Login from "./Login";
 import {
-  AreaChart,
-  Area,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-} from "recharts";
-
-const spendingData = [
-  { month: "May", income: 32000, expenses: 21000 },
-  { month: "Jun", income: 35000, expenses: 23000 },
-  { month: "Jul", income: 34000, expenses: 24500 },
-  { month: "Aug", income: 38000, expenses: 22000 },
-  { month: "Sep", income: 40000, expenses: 26000 },
-  { month: "Oct", income: 42000, expenses: 24000 },
-];
-
-const categories = [
-  { name: "Food & Dining", amount: 6200, percent: 72 },
-  { name: "Transport", amount: 3100, percent: 48 },
-  { name: "Shopping", amount: 2700, percent: 41 },
-  { name: "Entertainment", amount: 1800, percent: 29 },
-];
-
-const transactions = [
-  { name: "Salary", category: "Income", amount: "+ ₹42,000", type: "income" },
-  { name: "Food & Dining", category: "Food", amount: "- ₹850", type: "expense" },
-  { name: "Uber", category: "Transport", amount: "- ₹420", type: "expense" },
-  { name: "Amazon", category: "Shopping", amount: "- ₹1,299", type: "expense" },
-];
+  getDashboard,
+  getWellnessScore,
+  getCategorySpending,
+  addTransaction,
+} from "./api";
 
 function App() {
+  const [authenticated, setAuthenticated] = useState(false);
+  const [authChecking, setAuthChecking] = useState(true);
+
+  const [dashboard, setDashboard] = useState(null);
+  const [wellness, setWellness] = useState(null);
+  const [categories, setCategories] = useState([]);
+
+  const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState("");
+
+  const [transaction, setTransaction] = useState({
+    type: "expense",
+    amount: "",
+    category: "Food",
+    description: "",
+  });
+
+  // Check existing login
+  useEffect(() => {
+    const token = localStorage.getItem("token");
+
+    if (token) {
+      setAuthenticated(true);
+    }
+
+    setAuthChecking(false);
+  }, []);
+
+  // Load dashboard data
+  const loadDashboard = async () => {
+    const token = localStorage.getItem("token");
+
+    if (!token) {
+      return;
+    }
+
+    try {
+      setLoading(true);
+
+      const [dashboardData, wellnessData, categoryData] =
+        await Promise.all([
+          getDashboard(token),
+          getWellnessScore(token),
+          getCategorySpending(token),
+        ]);
+
+      setDashboard(dashboardData);
+      setWellness(wellnessData);
+      setCategories(categoryData.spending_by_category || []);
+    } catch (error) {
+      console.error(error);
+
+      if (error.response?.status === 401) {
+        localStorage.removeItem("token");
+        setAuthenticated(false);
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (authenticated) {
+      loadDashboard();
+    }
+  }, [authenticated]);
+
+  // Handle transaction form
+  const handleTransactionChange = (e) => {
+    setTransaction({
+      ...transaction,
+      [e.target.name]: e.target.value,
+    });
+  };
+
+  // Add transaction
+  const handleAddTransaction = async (e) => {
+    e.preventDefault();
+
+    const token = localStorage.getItem("token");
+
+    if (!token) {
+      return;
+    }
+
+    try {
+      setMessage("");
+
+      await addTransaction(token, {
+        type: transaction.type,
+        amount: Number(transaction.amount),
+        category: transaction.category,
+        description: transaction.description,
+      });
+
+      setMessage("Transaction added successfully.");
+
+      setTransaction({
+        type: "expense",
+        amount: "",
+        category: "Food",
+        description: "",
+      });
+
+      // Refresh dashboard
+      await loadDashboard();
+    } catch (error) {
+      console.error(error);
+
+      setMessage(
+        error.response?.data?.detail ||
+          "Failed to add transaction."
+      );
+    }
+  };
+
+  // Logout
+  const handleLogout = () => {
+    localStorage.removeItem("token");
+
+    setAuthenticated(false);
+    setDashboard(null);
+    setWellness(null);
+    setCategories([]);
+  };
+
+  if (authChecking) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center text-white">
+        Loading FinSight...
+      </div>
+    );
+  }
+
+  if (!authenticated) {
+    return (
+      <Login
+        onLogin={() => {
+          setAuthenticated(true);
+        }}
+      />
+    );
+  }
+
   return (
     <div className="min-h-screen bg-slate-950 text-white">
-      {/* Sidebar */}
-      <aside className="fixed left-0 top-0 hidden h-screen w-64 border-r border-slate-800 bg-slate-950 p-6 lg:block">
-        <div className="mb-10">
-          <h1 className="text-2xl font-bold tracking-tight">
-            Fin<span className="text-emerald-400">Sight</span>
-          </h1>
-          <p className="mt-1 text-xs text-slate-500">
-            Understand Your Money.
+      {/* Header */}
+      <header className="border-b border-slate-800 bg-slate-900">
+        <div className="max-w-7xl mx-auto px-6 py-5 flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-white">
+              FinSight
+            </h1>
+
+            <p className="text-sm text-slate-400">
+              Understand Your Money. Manage Your Future.
+            </p>
+          </div>
+
+          <button
+            onClick={handleLogout}
+            className="px-4 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white text-sm font-semibold"
+          >
+            Logout
+          </button>
+        </div>
+      </header>
+
+      <main className="max-w-7xl mx-auto px-6 py-8">
+
+        {/* Page heading */}
+        <div className="mb-8">
+          <h2 className="text-3xl font-bold">
+            Financial Dashboard
+          </h2>
+
+          <p className="text-slate-400 mt-2">
+            Track your income, expenses and financial health.
           </p>
         </div>
 
-        <nav className="space-y-2">
-          <div className="rounded-xl bg-emerald-500/10 px-4 py-3 text-sm font-medium text-emerald-400">
-            Dashboard
+        {/* Loading */}
+        {loading && (
+          <div className="mb-6 text-sm text-blue-400">
+            Updating financial data...
+          </div>
+        )}
+
+        {/* Summary Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
+
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6">
+            <p className="text-slate-400 text-sm">
+              Total Income
+            </p>
+
+            <h3 className="text-3xl font-bold text-green-400 mt-2">
+              ₹{dashboard?.total_income?.toFixed(2) || "0.00"}
+            </h3>
           </div>
 
-          <div className="rounded-xl px-4 py-3 text-sm text-slate-400">
-            Transactions
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6">
+            <p className="text-slate-400 text-sm">
+              Total Expenses
+            </p>
+
+            <h3 className="text-3xl font-bold text-red-400 mt-2">
+              ₹{dashboard?.total_expenses?.toFixed(2) || "0.00"}
+            </h3>
           </div>
 
-          <div className="rounded-xl px-4 py-3 text-sm text-slate-400">
-            Budgets
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6">
+            <p className="text-slate-400 text-sm">
+              Current Balance
+            </p>
+
+            <h3 className="text-3xl font-bold text-blue-400 mt-2">
+              ₹{dashboard?.balance?.toFixed(2) || "0.00"}
+            </h3>
           </div>
 
-          <div className="rounded-xl px-4 py-3 text-sm text-slate-400">
-            Insights
-          </div>
-        </nav>
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6">
+            <p className="text-slate-400 text-sm">
+              Savings Rate
+            </p>
 
-        <div className="absolute bottom-6 left-6 right-6 rounded-2xl border border-slate-800 bg-slate-900 p-4">
-          <p className="text-xs text-slate-500">Financial Wellness</p>
-          <p className="mt-2 text-2xl font-bold">82<span className="text-sm text-slate-500">/100</span></p>
-          <p className="mt-1 text-xs text-emerald-400">Good financial health</p>
+            <h3 className="text-3xl font-bold text-purple-400 mt-2">
+              {dashboard?.savings_rate?.toFixed(1) || "0.0"}%
+            </h3>
+          </div>
         </div>
-      </aside>
 
-      {/* Main Content */}
-      <main className="lg:ml-64">
-        {/* Header */}
-        <header className="border-b border-slate-800 px-6 py-5 md:px-10">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-slate-500">Welcome back</p>
-              <h2 className="mt-1 text-2xl font-semibold">
-                Your Financial Overview
-              </h2>
-            </div>
+        {/* Add Transaction + Wellness */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-8">
 
-            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-500/10 font-semibold text-emerald-400">
-              N
-            </div>
+          {/* Transaction Form */}
+          <div className="lg:col-span-2 bg-slate-900 border border-slate-800 rounded-2xl p-6">
+
+            <h2 className="text-xl font-bold mb-6">
+              Add Transaction
+            </h2>
+
+            <form
+              onSubmit={handleAddTransaction}
+              className="grid grid-cols-1 md:grid-cols-2 gap-4"
+            >
+
+              {/* Type */}
+              <div>
+                <label className="text-sm text-slate-300">
+                  Transaction Type
+                </label>
+
+                <select
+                  name="type"
+                  value={transaction.type}
+                  onChange={handleTransactionChange}
+                  className="w-full mt-2 px-4 py-3 bg-slate-800 border border-slate-700 rounded-lg text-white"
+                >
+                  <option value="expense">
+                    Expense
+                  </option>
+
+                  <option value="income">
+                    Income
+                  </option>
+                </select>
+              </div>
+
+              {/* Amount */}
+              <div>
+                <label className="text-sm text-slate-300">
+                  Amount
+                </label>
+
+                <input
+                  type="number"
+                  name="amount"
+                  value={transaction.amount}
+                  onChange={handleTransactionChange}
+                  required
+                  min="1"
+                  step="0.01"
+                  placeholder="Enter amount"
+                  className="w-full mt-2 px-4 py-3 bg-slate-800 border border-slate-700 rounded-lg text-white"
+                />
+              </div>
+
+              {/* Category */}
+              <div>
+                <label className="text-sm text-slate-300">
+                  Category
+                </label>
+
+                <select
+                  name="category"
+                  value={transaction.category}
+                  onChange={handleTransactionChange}
+                  className="w-full mt-2 px-4 py-3 bg-slate-800 border border-slate-700 rounded-lg text-white"
+                >
+                  <option value="Food">Food</option>
+                  <option value="Transport">Transport</option>
+                  <option value="Shopping">Shopping</option>
+                  <option value="Bills">Bills</option>
+                  <option value="Entertainment">
+                    Entertainment
+                  </option>
+                  <option value="Health">Health</option>
+                  <option value="Education">Education</option>
+                  <option value="Salary">Salary</option>
+                  <option value="Other">Other</option>
+                </select>
+              </div>
+
+              {/* Description */}
+              <div>
+                <label className="text-sm text-slate-300">
+                  Description
+                </label>
+
+                <input
+                  type="text"
+                  name="description"
+                  value={transaction.description}
+                  onChange={handleTransactionChange}
+                  required
+                  placeholder="e.g. Grocery shopping"
+                  className="w-full mt-2 px-4 py-3 bg-slate-800 border border-slate-700 rounded-lg text-white"
+                />
+              </div>
+
+              {/* Button */}
+              <div className="md:col-span-2">
+                <button
+                  type="submit"
+                  className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-lg transition"
+                >
+                  Add Transaction
+                </button>
+              </div>
+            </form>
+
+            {message && (
+              <div className="mt-4 bg-slate-800 border border-slate-700 rounded-lg p-3 text-sm text-slate-300">
+                {message}
+              </div>
+            )}
           </div>
-        </header>
 
-        <div className="space-y-6 p-6 md:p-10">
-          {/* Summary Cards */}
-          <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-            <div className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
-              <p className="text-sm text-slate-500">Total Balance</p>
-              <p className="mt-3 text-3xl font-bold">₹78,450</p>
-              <p className="mt-2 text-xs text-emerald-400">↑ 8.4% this month</p>
-            </div>
+          {/* Wellness */}
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6">
 
-            <div className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
-              <p className="text-sm text-slate-500">Income</p>
-              <p className="mt-3 text-3xl font-bold">₹42,000</p>
-              <p className="mt-2 text-xs text-emerald-400">This month</p>
-            </div>
+            <h2 className="text-xl font-bold">
+              Financial Wellness
+            </h2>
 
-            <div className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
-              <p className="text-sm text-slate-500">Expenses</p>
-              <p className="mt-3 text-3xl font-bold">₹24,000</p>
-              <p className="mt-2 text-xs text-orange-400">57% of income</p>
-            </div>
+            <div className="flex flex-col items-center justify-center py-8">
 
-            <div className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
-              <p className="text-sm text-slate-500">Monthly Budget</p>
-              <p className="mt-3 text-3xl font-bold">₹30,000</p>
-              <p className="mt-2 text-xs text-emerald-400">₹6,000 remaining</p>
-            </div>
-          </section>
-
-          {/* Chart + Wellness */}
-          <section className="grid gap-6 xl:grid-cols-3">
-            <div className="rounded-2xl border border-slate-800 bg-slate-900 p-6 xl:col-span-2">
-              <div className="mb-6">
-                <h3 className="text-lg font-semibold">Income vs Expenses</h3>
-                <p className="mt-1 text-sm text-slate-500">
-                  Track your financial movement over time
-                </p>
+              <div className="w-36 h-36 rounded-full border-8 border-blue-500 flex items-center justify-center">
+                <span className="text-4xl font-bold">
+                  {wellness?.score || 0}
+                </span>
               </div>
 
-              <div className="h-72">
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={spendingData}>
-                    <defs>
-                      <linearGradient id="incomeGradient" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="#34d399" stopOpacity={0.25} />
-                        <stop offset="100%" stopColor="#34d399" stopOpacity={0} />
-                      </linearGradient>
-
-                      <linearGradient id="expenseGradient" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="#fb923c" stopOpacity={0.2} />
-                        <stop offset="100%" stopColor="#fb923c" stopOpacity={0} />
-                      </linearGradient>
-                    </defs>
-
-                    <CartesianGrid stroke="#1e293b" vertical={false} />
-
-                    <XAxis
-                      dataKey="month"
-                      stroke="#64748b"
-                      tickLine={false}
-                      axisLine={false}
-                    />
-
-                    <YAxis
-                      stroke="#64748b"
-                      tickLine={false}
-                      axisLine={false}
-                    />
-
-                    <Tooltip
-                      contentStyle={{
-                        backgroundColor: "#0f172a",
-                        border: "1px solid #334155",
-                        borderRadius: "12px",
-                      }}
-                    />
-
-                    <Area
-                      type="monotone"
-                      dataKey="income"
-                      stroke="#34d399"
-                      fill="url(#incomeGradient)"
-                      strokeWidth={2}
-                    />
-
-                    <Area
-                      type="monotone"
-                      dataKey="expenses"
-                      stroke="#fb923c"
-                      fill="url(#expenseGradient)"
-                      strokeWidth={2}
-                    />
-                  </AreaChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-
-            {/* Wellness Score */}
-            <div className="rounded-2xl border border-slate-800 bg-slate-900 p-6">
-              <h3 className="text-lg font-semibold">Financial Wellness</h3>
-              <p className="mt-1 text-sm text-slate-500">
-                Your overall financial health
+              <p className="text-slate-400 mt-5">
+                Financial Health Score
               </p>
 
-              <div className="flex flex-col items-center py-8">
-                <div className="flex h-36 w-36 items-center justify-center rounded-full border-[10px] border-emerald-400/20">
-                  <div className="text-center">
-                    <p className="text-4xl font-bold">82</p>
-                    <p className="text-xs text-slate-500">out of 100</p>
-                  </div>
-                </div>
+              <p className="text-xl font-semibold text-green-400 mt-2">
+                {wellness?.status || "No Data"}
+              </p>
 
-                <p className="mt-5 font-semibold text-emerald-400">Good</p>
-                <p className="mt-2 text-center text-sm text-slate-500">
-                  You're maintaining healthy spending and saving habits.
-                </p>
-              </div>
-
-              <div className="space-y-4 border-t border-slate-800 pt-5">
-                <div>
-                  <div className="mb-2 flex justify-between text-xs">
-                    <span className="text-slate-400">Savings Rate</span>
-                    <span>40%</span>
-                  </div>
-                  <div className="h-2 rounded-full bg-slate-800">
-                    <div className="h-2 w-[80%] rounded-full bg-emerald-400" />
-                  </div>
-                </div>
-
-                <div>
-                  <div className="mb-2 flex justify-between text-xs">
-                    <span className="text-slate-400">Budget Control</span>
-                    <span>75%</span>
-                  </div>
-                  <div className="h-2 rounded-full bg-slate-800">
-                    <div className="h-2 w-[75%] rounded-full bg-emerald-400" />
-                  </div>
-                </div>
-              </div>
+              <p className="text-sm text-slate-500 mt-3 text-center">
+                Based on savings, spending and budget management.
+              </p>
             </div>
-          </section>
+          </div>
+        </div>
 
-          {/* Categories + Transactions */}
-          <section className="grid gap-6 xl:grid-cols-2">
-            {/* Categories */}
-            <div className="rounded-2xl border border-slate-800 bg-slate-900 p-6">
-              <div className="mb-6">
-                <h3 className="text-lg font-semibold">Spending Categories</h3>
-                <p className="mt-1 text-sm text-slate-500">
-                  Where your money is going
-                </p>
-              </div>
+        {/* Spending Categories */}
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 mt-8">
 
-              <div className="space-y-5">
-                {categories.map((category) => (
-                  <div key={category.name}>
-                    <div className="mb-2 flex justify-between">
-                      <span className="text-sm text-slate-300">
-                        {category.name}
+          <h2 className="text-xl font-bold mb-6">
+            Spending by Category
+          </h2>
+
+          {categories.length === 0 ? (
+            <p className="text-slate-500">
+              No expense data available yet.
+            </p>
+          ) : (
+            <div className="space-y-5">
+              {categories.map((item) => {
+
+                const maxAmount =
+                  categories[0]?.amount || 1;
+
+                const percentage =
+                  (item.amount / maxAmount) * 100;
+
+                return (
+                  <div key={item.category}>
+
+                    <div className="flex justify-between mb-2">
+                      <span className="text-slate-300">
+                        {item.category}
                       </span>
-                      <span className="text-sm font-medium">
-                        ₹{category.amount.toLocaleString()}
+
+                      <span className="font-semibold">
+                        ₹{item.amount.toFixed(2)}
                       </span>
                     </div>
 
-                    <div className="h-2 rounded-full bg-slate-800">
+                    <div className="w-full bg-slate-800 rounded-full h-3">
                       <div
-                        className="h-2 rounded-full bg-emerald-400"
-                        style={{ width: `${category.percent}%` }}
+                        className="bg-blue-500 h-3 rounded-full"
+                        style={{
+                          width: `${percentage}%`,
+                        }}
                       />
                     </div>
                   </div>
-                ))}
-              </div>
+                );
+              })}
             </div>
-
-            {/* Transactions */}
-            <div className="rounded-2xl border border-slate-800 bg-slate-900 p-6">
-              <div className="mb-6 flex items-center justify-between">
-                <div>
-                  <h3 className="text-lg font-semibold">Recent Transactions</h3>
-                  <p className="mt-1 text-sm text-slate-500">
-                    Your latest financial activity
-                  </p>
-                </div>
-
-                <button className="text-sm text-emerald-400">
-                  View all
-                </button>
-              </div>
-
-              <div className="space-y-4">
-                {transactions.map((transaction) => (
-                  <div
-                    key={transaction.name}
-                    className="flex items-center justify-between rounded-xl border border-slate-800 p-4"
-                  >
-                    <div>
-                      <p className="text-sm font-medium">{transaction.name}</p>
-                      <p className="mt-1 text-xs text-slate-500">
-                        {transaction.category}
-                      </p>
-                    </div>
-
-                    <p
-                      className={`text-sm font-semibold ${
-                        transaction.type === "income"
-                          ? "text-emerald-400"
-                          : "text-slate-300"
-                      }`}
-                    >
-                      {transaction.amount}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </section>
-
-          {/* Insight */}
-          <section className="rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-6">
-            <p className="text-sm font-medium text-emerald-400">
-              Financial Insight
-            </p>
-            <h3 className="mt-2 text-lg font-semibold">
-              You're spending within your budget 🎯
-            </h3>
-            <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">
-              Your current expenses are below your monthly budget. Food and
-              dining is your highest spending category, so reducing it slightly
-              could improve your savings rate.
-            </p>
-          </section>
+          )}
         </div>
+
+        {/* Demo Flow */}
+        <div className="mt-8 bg-slate-900 border border-slate-800 rounded-2xl p-6">
+
+          <h2 className="text-xl font-bold">
+            FinSight Flow
+          </h2>
+
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mt-5">
+
+            <div className="bg-slate-800 rounded-xl p-4">
+              <p className="text-blue-400 font-bold">
+                01
+              </p>
+              <p className="font-semibold mt-2">
+                Add Income
+              </p>
+              <p className="text-sm text-slate-400 mt-1">
+                Record your earnings.
+              </p>
+            </div>
+
+            <div className="bg-slate-800 rounded-xl p-4">
+              <p className="text-blue-400 font-bold">
+                02
+              </p>
+              <p className="font-semibold mt-2">
+                Track Expenses
+              </p>
+              <p className="text-sm text-slate-400 mt-1">
+                Categorize your spending.
+              </p>
+            </div>
+
+            <div className="bg-slate-800 rounded-xl p-4">
+              <p className="text-blue-400 font-bold">
+                03
+              </p>
+              <p className="font-semibold mt-2">
+                Analyze
+              </p>
+              <p className="text-sm text-slate-400 mt-1">
+                Understand where money goes.
+              </p>
+            </div>
+
+            <div className="bg-slate-800 rounded-xl p-4">
+              <p className="text-blue-400 font-bold">
+                04
+              </p>
+              <p className="font-semibold mt-2">
+                Improve
+              </p>
+              <p className="text-sm text-slate-400 mt-1">
+                Monitor your financial wellness.
+              </p>
+            </div>
+
+          </div>
+        </div>
+
       </main>
     </div>
   );
